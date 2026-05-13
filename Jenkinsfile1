@@ -1,0 +1,50 @@
+pipeline {
+    agent any
+
+    environment {
+        SUDO_PASS = credentials('ansible-sudo-password')  // Jenkins Secret Text ID for sudo password
+    }
+
+    stages {
+        stage('Checkout Jenkins Repo') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/VamsiJaddu/Jenkins.git',
+                    credentialsId: 'jenkins-github'
+            }
+        }
+
+        stage('Checkout Ansible Repo') {
+            steps {
+                sshagent(credentials: ['jenkins-ansible']) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ansible@172.31.1.11 << EOF
+                        if [ ! -d "/home/ansible/ansible-repo" ]; then
+                            echo "Cloning Ansible repository..."
+                            git clone https://github.com/VamsiJaddu/Ansible.git /home/ansible/ansible-repo
+                        else
+                            echo "Updating existing Ansible repository..."
+                            cd /home/ansible/ansible-repo
+                            git pull
+                        fi
+                        << EOF
+                    '''
+                }
+            }
+        }
+
+        stage('Run nginx.yml Ansible Playbook') {
+            steps {
+                sshagent(credentials: ['jenkins-ansible']) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ansible@172.31.1.11 << EOF
+                            cd /home/ansible/ansible-repo
+                            echo "Running nginx.yml playbook..."
+                            ansible-playbook -i /home/ansible/inventory.ini nginx.yml --extra-vars "ansible_become_pass=$SUDO_PASS"
+                        << EOF
+                    '''
+                }
+            }
+        }
+    }
+}
